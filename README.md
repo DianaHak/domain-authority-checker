@@ -1,2 +1,3 @@
 # domain-authority-checker
-node app created specially for Godaddy auction domain exported csv file
+
+SEMRush Domain Authority Checker is a Node.js-based web application for analyzing domain authority and auction data from uploaded CSV files. It scrapes Domain Authority (DA) using Puppeteer from SEMrush, and stores domain info—including DA, price, and auction end time—in a MySQL database. Users can view, sort, and filter domains based on metrics like DA, price, and expiration status. The app highlights domains based on how soon they expire (red/orange/black) and auto-archives expired ones. It also supports editable comments and a favorite system with persistent starring. This tool is ideal for domain investors, SEO specialists, or anyone tracking expiring domains.
