@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Domain Checker</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th,
+    td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      cursor: pointer;
+    }
+
+    button.tab {
+      margin-right: 10px;
+    }
+
+    #progress-container {
+      margin-top: 20px;
+      width: 100%;
+      background-color: #f3f3f3;
+      height: 30px;
+      border-radius: 5px;
+      display: none;
+    }
+
+    #progress-bar {
+      height: 100%;
+      background-color: #4caf50;
+      width: 0%;
+      border-radius: 5px;
+    }
+
+    .smallth {
+      width:
+        6%;
+      text-align: center;
+    }
+
+    .domainwidth {
+      width: 7%;
+    }
+
+    .comment_section {
+      width: 30%;
+    }
+
+    button.tab.active {
+      color: black;
+    }
+
+    .da {
+      font-weight: bold;
+    }
+
+    th {
+      background-color: #eee;
+    }
+
+    th.sortable:hover {
+      background-color: #f0f0f0;
+    }
+
+    .starwidth {
+      width: 0.5%;
+      text-align: center;
+    }
+
+    .numberwidth {
+      width: 0.1%;
+      text-align: center;
+      color: gray;
+    }
+  </style>
+</head>
+
+<body>
+  <div style="text-align: right;">
+    <form action="/upload" method="POST" enctype="multipart/form-data">
+      <label
+        style="display: inline-block; padding: 5px 7px; border-radius: 5px; cursor: pointer; background-color: #eee;">
+        📥 import domains
+        <input type="file" name="csv" accept=".csv" required style="display: none;" />
+      </label>
+      <button type="submit "
+        style="background: #0097A7; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer; border: solid 1px #0097A7;">start
+        scanning</button>
+    </form>
+  </div>
+
+
+  <div style="display:flex;justify-content: space-between;
+    align-items: flex-end;margin: 2% 0;">
+    <div style="width: 35%;">
+      <button class="tab" onclick="load('all')">all</button>
+      <button class="tab" onclick="load('filtered')">filtered (DA ≥ 15)</button>
+      <button id="check-timing-btn">check timing</button>
+    </div>
+
+    <div style="width: 30%; text-align: right;">
+      <button class="tab" onclick="load('archived')">archived</button>
+    </div>
+  </div>
+
+  <table id="results"></table>
+
+  <!-- Progress Bar -->
+  <div id="progress-container">
+    <div id="progress-bar"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let currentSort = { key: null, direction: 'desc' };
+    let loadedData = [];
+
+    window.addEventListener('DOMContentLoaded', () => {
+      load('all');
+      fetch('/api/domains/archive-passed');
+
+      socket.on('progress', (data) => {
+        if (data.status === 'started') {
+          document.getElementById('progress-container').style.display = 'block';
+        }
+        if (data.status === 'in-progress') {
+          document.getElementById('progress-bar').style.width = data.progress + '%';
+        }
+        if (data.status === 'completed') {
+          document.getElementById('progress-bar').style.width = '100%';
+          setTimeout(() => {
+            load('all');
+          }, 500);
+        }
+      });
+    });
+
+    document.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const res = await fetch('/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const result = await res.json();
+      if (result.status !== 'success') {
+        alert('Error uploading CSV. Please try again!');
+      }
+    });
+
+    async function load(status) {
+      setActiveTab(status);
+      const res = await fetch('/api/domains/' + status);
+      const data = await res.json();
+
+      loadedData = data.filter(d => {
+        const color = getEndTimeColor(d.endTime);
+
+        if (status === 'archived') {
+          return color === 'gray';
+        }
+
+        if (status === 'filtered') {
+          const isValid = parseFloat(d.da) >= 15 && color !== 'gray';
+          if (isValid) console.log('✔️ Filtered:', d.domain, 'DA:', d.da, 'Color:', color);
+          return isValid;
+        }
+
+        return color !== 'gray';
+      });
+
+      // Sorting after filtering
+      if (currentSort.key) {
+        loadedData.sort((a, b) => compareValues(a, b, currentSort.key, currentSort.direction));
+      }
+
+      renderTable();
+    }
+
+    function renderTable() {
+      const table = document.getElementById('results');
+      const directionIcon = dir => dir === 'asc' ? '▲' : '▼';
+
+      const daSortIcon = currentSort.key === 'da' ? ` ${directionIcon(currentSort.direction)}` : '';
+      const priceSortIcon = currentSort.key === 'price' ? ` ${directionIcon(currentSort.direction)}` : '';
+      const endSortIcon = currentSort.key === 'endTime' ? ` ${directionIcon(currentSort.direction)}` : '';
+
+      table.innerHTML = `
+        <tr>
+          <th class="numberwidth">Nº</th>
+<th class="starwidth sortable" onclick="toggleSort('favorite')">
+  favo<span id="faveSortIcon"></span>
+</th>
+          <th class="domainwidth">domain</th>
+          <th class="smallth da sortable" onclick="toggleSort('da')">DA${daSortIcon}</th>
+          <th class="smallth sortable" onclick="toggleSort('price')">price${priceSortIcon}</th>
+          <th class="smallth sortable" onclick="toggleSort('endTime')">end time${endSortIcon}       
+</th>
+
+          <th class="comment_section">comments</th>
+        </tr>` +
+        loadedData.map((d, index) => {
+          const color = getEndTimeColor(d.endTime);
+          return `
+    <tr>
+      <td class="numberwidth">${index + 1}</td>
+
+<td class="starwidth">
+  <img 
+    width="20" 
+    height="20" 
+    src="${d.favorite ?
+              'star-02.png':
+              'https://img.icons8.com/ios/50/star--v1.png'}"
+    alt="star"
+    style="cursor: pointer;"
+    data-favorite="${d.favorite}"
+    onclick="toggleFavorite(this, '${d.domain}')"
+  />
+</td>
+
+              <td class="domainwidth">${d.domain}</td>
+              <td class="smallth da">${d.da}</td>
+              <td class="smallth">$ ${parseFloat(d.price)}</td>
+<td class="smallth" style="color: ${color};">
+  ${formatDate(d.endTime)}
+</td>              <td class="comment_section">
+                <span class="comment-display">${d.comment || ''}</span>
+                <input  class="comment-input" type="text" value="${d.comment || ''}" style="display: none;" />
+                <button style="float:right;" onclick="toggleEdit(this)">edit</button>
+                <button  onclick="saveComment(this, '${d.domain}')" style="display: none;">save</button>
+              </td>
+            </tr>`;
+        }).join('');
+    }
+
+    let currentSort1 = { field: '', direction: 'asc' };
+    function formatDate(dateStr) {
+      const date = new Date(dateStr);
+      if (isNaN(date)) return dateStr;
+
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+
+      return `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;
+    }
+
+    function toggleSort(field) {
+      if (currentSort1.field === field) {
+        currentSort1.direction = currentSort1.direction === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSort1.field = field;
+        currentSort1.direction = 'asc';
+      }
+
+      // sort loadedData
+      loadedData.sort((a, b) => {
+        if (field === 'favorite') {
+          return currentSort1.direction === 'asc'
+            ? (b.favorite || 0) - (a.favorite || 0)
+            : (a.favorite || 0) - (b.favorite || 0);
+        }
+
+        if (typeof a[field] === 'string') {
+          return currentSort1.direction === 'asc'
+            ? a[field].localeCompare(b[field])
+            : b[field].localeCompare(a[field]);
+        } else {
+          return currentSort1.direction === 'asc'
+            ? a[field] - b[field]
+            : b[field] - a[field];
+        }
+      });
+
+      updateSortIcons();
+      renderTable();
+    }
+
+    function toggleSort(key) {
+      if (currentSort.key === key) {
+        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSort.key = key;
+        currentSort.direction = 'desc';
+      }
+      loadedData.sort((a, b) => compareValues(a, b, currentSort.key, currentSort.direction));
+      renderTable();
+    }
+
+    function compareValues(a, b, key, direction) {
+      let valA = a[key];
+      let valB = b[key];
+
+      if (key === 'endTime') {
+        valA = parseCustomDate(valA);
+        valB = parseCustomDate(valB);
+      } else if (key === 'price' || key === 'da') {
+        valA = parseFloat(valA);
+        valB = parseFloat(valB);
+      }
+
+      if (valA < valB) return direction === 'asc' ? -1 : 1;
+      if (valA > valB) return direction === 'asc' ? 1 : -1;
+      return 0;
+    }
+
+    function getEndTimeColor(endTimeStr) {
+      const parsedDate = new Date(endTimeStr); // this is UTC
+      const now = new Date(); // your local time
+
+      const timeDiffMs = parsedDate.getTime() - now.getTime();
+      const diffHours = timeDiffMs / 36e5;
+
+      if (diffHours < 0) return 'gray';   // Expired
+      if (diffHours < 12) return 'red';   // < 12 hours left
+      if (diffHours < 24) return 'orange'; // < 24 hours left
+      return 'black';                     // 24+ hours left
+    }
+
+
+    function parseCustomDate(str) {
+      // Format: "2025-04-22 19:13:00"
+      const parts = str.split(/[- :]/);
+      if (parts.length < 5) return null;
+
+      const [year, month, day, hour, minute, second = 0] = parts.map(Number);
+      return new Date(year, month - 1, day, hour, minute, second);
+    }
+
+
+
+
+    function setActiveTab(status) {
+      document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = [...document.querySelectorAll('.tab')].find(b => b.textContent.toLowerCase().includes(status));
+      if (activeBtn) activeBtn.classList.add('active');
+    }
+
+    document.getElementById('check-timing-btn').addEventListener('click', async () => {
+      await fetch('/api/domains/archive-passed');
+      load('all');
+    });
+
+
+    function toggleEdit(btn) {
+      const td = btn.closest('td');
+      td.querySelector('.comment-display').style.display = 'none';
+      td.querySelector('.comment-input').style.display = 'inline-block';
+      td.querySelector('.comment-input').style.width = '90%';
+
+      btn.style.display = 'none';
+      td.querySelector('button[onclick^="saveComment"]').style.display = 'inline-block';
+      td.querySelector('button[onclick^="saveComment"]').style.float = 'right';
+
+    }
+
+    async function saveComment(btn, domain) {
+      const td = btn.closest('td');
+      const input = td.querySelector('.comment-input');
+      const comment = input.value;
+
+      // Save via API
+      await fetch('/api/domains/comment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, comment })
+      });
+
+      // Update UI
+      td.querySelector('.comment-display').textContent = comment;
+      td.querySelector('.comment-display').style.display = 'inline-block';
+      input.style.display = 'none';
+      btn.style.display = 'none';
+      td.querySelector('button[onclick^="toggleEdit"]').style.display = 'inline-block';
+    }
+  </script>
+  <script>
+    function toggleFavorite(img, domain) {
+      const isFavorite = img.dataset.favorite === '1';
+      const newFavorite = isFavorite ? 0 : 1;
+
+      fetch('/api/favorite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, favorite: newFavorite })
+      }).then(() => {
+        img.src = newFavorite === 1
+          ? 'star-02.png'
+          : 'https://img.icons8.com/ios/50/star--v1.png';
+        img.dataset.favorite = newFavorite;
+      });
+    }
+
+  </script>
+
+</body>
+
+</html>

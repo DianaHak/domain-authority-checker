@@ -1,0 +1,75 @@
+// const express = require('express');
+// const multer = require('multer');
+// const path = require('path');
+// const db = require('./database');
+// const { processCSV } = require('./checker');
+
+// const app = express();
+// const upload = multer({ dest: 'uploads/' });
+
+// app.use(express.static('public'));
+// app.use('/reports', express.static('reports'));
+
+// app.post('/upload', upload.single('csv'), async (req, res) => {
+//   const filePath = req.file.path;
+//   await processCSV(filePath);
+//   res.redirect('/');
+// });
+
+// app.get('/api/domains', (req, res) => {
+//   db.getAll((err, rows) => res.json(rows));
+// });
+
+// app.get('/api/domains/:status', (req, res) => {
+//     const status = req.params.status;
+  
+//     if (status === 'all') {
+//       db.getAllNonArchived((err, rows) => res.json(rows));
+//     } else {
+//       db.getByStatus(status, (err, rows) => res.json(rows));
+//     }
+//   });
+//   app.get('/generate/filtered-report', (req, res) => {
+//     db.getByStatus('filtered', (err, rows) => {
+//       if (err) return res.status(500).send('Error generating report');
+  
+//       const html = `
+//       <html>
+//         <head>
+//           <title>Filtered Domains Report</title>
+//           <style>
+//             body { font-family: Arial, sans-serif; padding: 20px; }
+//             table { border-collapse: collapse; width: 100%; }
+//             th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+//             th { background-color: #f2f2f2; }
+//           </style>
+//         </head>
+//         <body>
+//           <h2>Filtered Domains (DA ≥ 6)</h2>
+//           <table>
+//             <tr>
+//               <th>Domain</th>
+//               <th>DA</th>
+//               <th>Price</th>
+//               <th>Auction End Time</th>
+//             </tr>
+//             ${rows.map(d => `
+//               <tr>
+//                 <td>${d.domain}</td>
+//                 <td>${d.da}</td>
+//                 <td>${d.price}</td>
+//                 <td>${d.endTime}</td>
+//               </tr>
+//             `).join('')}
+//           </table>
+//         </body>
+//       </html>
+//       `;
+  
+//       fs.writeFileSync('reports/filtered.html', html.trim());
+//       res.send('✅ Filtered domains report generated: <a href="/reports/filtered.html" target="_blank">View Report</a>');
+//     });
+//   });
+  
+
+// app.listen(3000, () => console.log('✅ Server running at http://localhost:3000'));
