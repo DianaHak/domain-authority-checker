@@ -25,6 +25,25 @@ app.use(express.static('public'));
 app.use(express.json());
 
 // Endpoint to upload CSV
+
+let isScanningPaused = false;
+let isScanningStopped = false;
+app.post('/scan/pause', (req, res) => {
+  isScanningPaused = true;
+  res.json({ status: 'paused' });
+});
+
+app.post('/scan/resume', (req, res) => {
+  isScanningPaused = false;
+  res.json({ status: 'resumed' });
+});
+
+app.post('/scan/stop', (req, res) => {
+  isScanningStopped = true;
+  res.json({ status: 'stopped' });
+});
+
+
 app.post('/upload', upload.single('csv'), async (req, res) => {
   if (!req.file) {
     console.log('No file uploaded');
@@ -48,6 +67,8 @@ app.post('/upload', upload.single('csv'), async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Checker failed' });
   }
 });
+
+
 app.get('/api/domains/:status', (req, res) => {
   const status = req.params.status;
   const now = new Date();
@@ -133,25 +154,23 @@ app.get('/check-timing', async (req, res) => {
 });
 
 app.get('/api/domains/archive-passed', (req, res) => {
-  db.getAllNonArchived((err, domains) => {
-    if (err) return res.status(500).json({ error: err.message });
-
-    const now = new Date();
-    const expired = domains.filter(domain => new Date(domain.endTime) < now);
-
-    expired.forEach(domain => {
-      db.insertOrUpdate({
-        domain: domain.domain,
-        da: domain.da,
-        price: domain.price,
-        endTime: domain.endTime,
-        status: 'archived'
-      });
-    });
-
-    res.json({ status: 'success', archivedDomains: expired });
+  const sql = `
+    UPDATE domains
+    SET status = 'archived'
+    WHERE status = 'active' AND endTime < NOW()
+  `;
+  db.query(sql, (err, result) => {
+    if (err) {
+      console.error('❌ Error archiving domains:', err);
+      return res.status(500).json({ error: 'Failed to archive domains' });
+    }
+    res.json({ status: 'success', moved: result.affectedRows });
   });
 });
+
+
+
+
 
 
 app.post('/api/favorite', async (req, res) => {
@@ -177,6 +196,10 @@ const runChecker = async (filePath, progressCallback) => {
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   for (let i = 0; i < totalDomains; i++) {
+    while (isScanningPaused) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // wait half a sec
+    }
+    if (isScanningStopped) break;
     const domain = csvData[i]['Domain Name'];
     try {
       await page.goto('https://www.semrush.com/free-tools/website-authority-checker/');
@@ -226,5 +249,7 @@ const parseCsv = (filePath) => {
       .on('error', (err) => reject(err));
   });
 };
+
+
 
 server.listen(port, () => console.log(`🚀 Server running on http://localhost:${port}`));

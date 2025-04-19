@@ -2,7 +2,7 @@ const mysql = require('mysql2');
 const moment = require('moment'); // install if not already: npm i moment
 
 const db = mysql.createConnection({
-  // host: '127.127.126.26', // or try 127.127.126.50 if needed
+  host: '127.127.126.26', // or try 127.127.126.50 if needed
   user: 'root',
   password: '',
   database: 'da-checker',
@@ -32,10 +32,16 @@ module.exports = {
       if (err) return callback?.(err);
 
       if (results.length > 0) {
-        // Domain exists, skip inserting
-        console.log(`⏭️ Domain already exists: ${domain}`);
-        return callback?.(null, { skipped: true });
+        // Domain exists, update instead
+        const updateQuery = `
+          UPDATE domains
+          SET da = ?, price = ?, endTime = ?, status = ?, comment = ?
+          WHERE domain = ?
+        `;
+        return db.query(updateQuery, [da, price, parsedEndTime, status, comment, domain], callback);
       }
+      
+      
 
       // Step 2: If not exists, insert it
       const insertQuery = `
